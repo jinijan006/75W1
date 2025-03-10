@@ -1,0 +1,49 @@
+name: CI
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests google-api-python-client google-auth google-auth-oauthlib tqdm
+    - name: Install FFmpeg
+      run: |
+       choco install ffmpeg
+       ffmpeg -version  # Check if FFmpeg is installed
+
+    - name: Download ngrok
+      run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+
+    - name: Extract ngrok
+      run: Expand-Archive ngrok.zip
+
+    - name: Authenticate ngrok
+      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+    - name: Enable Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
+
+    - name: Run ngrok tunnel and display URL
+      run: |
+        Start-Process python -ArgumentList "ngrok_tunnel.py" -NoNewWindow
+        # Wait for the TCP URL file to be created
+        while (-not (Test-Path "ngrok_tcp_url.txt")) {
+            Start-Sleep -Seconds 5
+        }
+        $tcpUrl = Get-Content -Path "ngrok_tcp_url.txt"
+        echo "ngrok TCP URL: $tcpUrl"
+        sleep 21000
